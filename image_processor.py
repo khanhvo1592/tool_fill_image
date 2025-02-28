@@ -10,7 +10,7 @@ class ImageProcessorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Image Processor")
-        self.root.geometry("600x400")
+        self.root.geometry("600x600")
         
         # Tạo thư mục output nếu chưa tồn tại
         if not os.path.exists("output"):
@@ -23,23 +23,23 @@ class ImageProcessorApp:
         self.create_widgets()
     
     def create_widgets(self):
-        # Frame chính
+        # Main frame
         main_frame = tk.Frame(self.root, padx=20, pady=20)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Tiêu đề
-        title_label = tk.Label(main_frame, text="Chuyển đổi ảnh sang màu đen-trắng", font=("Arial", 16, "bold"))
+        # Title
+        title_label = tk.Label(main_frame, text="Convert Images to Black", font=("Arial", 16, "bold"))
         title_label.pack(pady=10)
         
-        # Nút chọn file
-        select_button = tk.Button(main_frame, text="Chọn ảnh", command=self.select_files, width=20, height=2)
+        # Select files button
+        select_button = tk.Button(main_frame, text="Select Images", command=self.select_files, width=20, height=2)
         select_button.pack(pady=10)
         
-        # Hiển thị số lượng file đã chọn
-        self.file_count_label = tk.Label(main_frame, text="Đã chọn: 0 file")
+        # Display the number of selected files
+        self.file_count_label = tk.Label(main_frame, text="Selected: 0 files")
         self.file_count_label.pack(pady=5)
         
-        # Khung hiển thị danh sách file
+        # Frame for displaying the file list
         list_frame = tk.Frame(main_frame, bd=1, relief=tk.SUNKEN)
         list_frame.pack(fill=tk.BOTH, expand=True, pady=10)
         
@@ -51,9 +51,9 @@ class ImageProcessorApp:
         
         scrollbar.config(command=self.file_listbox.yview)
         
-        # Nút xử lý ảnh
-        process_button = tk.Button(main_frame, text="Xử lý ảnh", command=self.process_images, width=20, height=2)
-        process_button.pack(pady=10)
+        # Process images button
+        process_button = tk.Button(main_frame, text="Process Images", command=self.process_images, width=20, height=2)
+        process_button.pack(pady=(10, 20))  # Add padding to ensure visibility
     
     def select_files(self):
         files = filedialog.askopenfilenames(
