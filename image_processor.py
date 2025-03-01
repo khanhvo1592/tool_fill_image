@@ -1,6 +1,6 @@
 import os
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, Scale, Frame, Label
 from PIL import Image, ImageTk
 import numpy as np
 import subprocess
@@ -21,6 +21,9 @@ class ImageProcessorApp:
         
         # Danh sách các file đã chọn
         self.selected_files = []
+        
+        # Mặc định border factor (5%)
+        self.border_factor = 0.05
         
         # Tạo giao diện
         self.create_widgets()
@@ -76,6 +79,28 @@ class ImageProcessorApp:
         output_button = tk.Button(output_frame, text="Browse...", command=self.select_output_directory)
         output_button.pack(side=tk.RIGHT)
         
+        # Border width adjustment
+        border_frame = tk.Frame(left_frame)
+        border_frame.pack(fill=tk.X, pady=(5, 10))
+        
+        border_label = tk.Label(border_frame, text="Border width:")
+        border_label.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.border_value_label = tk.Label(border_frame, text="5%", width=5)
+        self.border_value_label.pack(side=tk.RIGHT)
+        
+        self.border_slider = Scale(
+            border_frame, 
+            from_=1, 
+            to=20, 
+            orient=tk.HORIZONTAL,
+            command=self.update_border_value,
+            resolution=1,
+            length=200
+        )
+        self.border_slider.set(5)  # Default 5%
+        self.border_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
+        
         # Process images button
         process_button = tk.Button(left_frame, text="Process Images", command=self.process_images, width=20, height=2)
         process_button.pack(pady=(10, 20))  # Add padding to ensure visibility
@@ -91,6 +116,10 @@ class ImageProcessorApp:
         
         preview_title = tk.Label(preview_header, text="Preview", font=("Arial", 10, "bold"), bg="#f0f0f0")
         preview_title.pack(side=tk.LEFT, padx=10, pady=5)
+        
+        # Preview button
+        preview_button = tk.Button(preview_header, text="Preview", command=self.preview_image)
+        preview_button.pack(side=tk.RIGHT, padx=10, pady=2)
         
         # Preview container with padding
         preview_container = tk.Frame(right_frame, padx=10, pady=10)
@@ -115,6 +144,18 @@ class ImageProcessorApp:
         # File dimensions
         self.file_dimensions_label = tk.Label(self.info_frame, text="", bg="#f0f0f0", anchor="w")
         self.file_dimensions_label.pack(fill=tk.X, padx=10, pady=(5, 10))
+    
+    def update_border_value(self, value):
+        # Cập nhật giá trị border_factor dựa trên giá trị slider
+        percent = int(float(value))
+        self.border_value_label.config(text=f"{percent}%")
+        self.border_factor = percent / 100
+        
+        # Cập nhật preview nếu có ảnh được chọn
+        if self.file_listbox.curselection():
+            index = self.file_listbox.curselection()[0]
+            file_path = self.selected_files[index]
+            self.update_preview(file_path)
     
     def select_files(self):
         files = filedialog.askopenfilenames(
@@ -171,20 +212,63 @@ class ImageProcessorApp:
                     # Đổi vùng trong suốt thành màu trắng
                     img[transparent_mask] = [255, 255, 255]  # BGR format: trắng = [255, 255, 255]
                 
+                # Lưu lại kích thước gốc của ảnh
+                original_h, original_w = img.shape[:2]
+                
+                # Tính toán kích thước padding dựa trên kích thước ảnh
+                padding_size = int(max(original_h, original_w) * 0.1)  # Padding 10% kích thước ảnh
+                
+                # Thêm padding vào ảnh
+                img_padded = cv2.copyMakeBorder(
+                    img, 
+                    padding_size, padding_size, padding_size, padding_size, 
+                    cv2.BORDER_CONSTANT, 
+                    value=[255, 255, 255]  # Màu trắng
+                )
+                
                 # Chuyển sang grayscale
-                img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                img_gray = cv2.cvtColor(img_padded, cv2.COLOR_BGR2GRAY)
                 
                 # Apply a binary threshold to get a binary image
-                _, binary = cv2.threshold(img_gray, 240, 255, cv2.THRESH_BINARY_INV)  # Invert the colors
+                _, binary = cv2.threshold(img_gray, 240, 255, cv2.THRESH_BINARY_INV)
                 
                 # Find contours of the objects
                 contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 
-                # Create a new image with the same dimensions as the original
-                new_image = np.ones_like(img) * 255  # Start with a white background
+                # Create a new image with the same dimensions as the padded image
+                new_image = np.ones_like(img_padded) * 255  # Start with a white background
                 
-                # Fill the contours with black
-                cv2.drawContours(new_image, contours, -1, (0, 0, 0), thickness=cv2.FILLED)
+                # Xử lý từng contour
+                for contour in contours:
+                    # Tính toán kích thước của đối tượng
+                    x, y, w, h = cv2.boundingRect(contour)
+                    
+                    # Tính toán độ rộng viền dựa trên border_factor
+                    border_size = int(min(w, h) * self.border_factor)
+                    
+                    # Đảm bảo border_size ít nhất là 1 pixel
+                    border_size = max(1, border_size)
+                    
+                    # Tạo mask cho contour hiện tại
+                    mask = np.zeros_like(img_gray)
+                    cv2.drawContours(mask, [contour], -1, 255, thickness=cv2.FILLED)
+                    
+                    # Tạo kernel cho phép dilation
+                    kernel = np.ones((border_size * 2 + 1, border_size * 2 + 1), np.uint8)
+                    
+                    # Áp dụng dilation để tạo viền
+                    dilated_mask = cv2.dilate(mask, kernel, iterations=1)
+                    
+                    # Vẽ contour đã được dilation lên ảnh mới
+                    new_image[dilated_mask > 0] = [0, 0, 0]  # Đặt màu đen cho vùng đã dilation
+                
+                # Cắt bỏ phần padding để trả về kích thước ban đầu
+                new_image = new_image[padding_size:padding_size+original_h, padding_size:padding_size+original_w]
+                
+                # Kiểm tra kích thước ảnh đầu ra
+                if new_image.shape[:2] != (original_h, original_w):
+                    # Nếu kích thước không khớp, resize lại ảnh
+                    new_image = cv2.resize(new_image, (original_w, original_h), interpolation=cv2.INTER_NEAREST)
                 
                 # Save the image
                 filename = os.path.basename(file_path)
@@ -234,11 +318,58 @@ class ImageProcessorApp:
                 # Đổi vùng trong suốt thành màu trắng
                 img[transparent_mask] = [255, 255, 255]  # BGR format: trắng = [255, 255, 255]
             
-            img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            # Lưu lại kích thước gốc của ảnh
+            original_h, original_w = img.shape[:2]
+            
+            # Tính toán kích thước padding dựa trên kích thước ảnh
+            padding_size = int(max(original_h, original_w) * 0.1)  # Padding 10% kích thước ảnh
+            
+            # Thêm padding vào ảnh
+            img_padded = cv2.copyMakeBorder(
+                img, 
+                padding_size, padding_size, padding_size, padding_size, 
+                cv2.BORDER_CONSTANT, 
+                value=[255, 255, 255]  # Màu trắng
+            )
+            
+            img_gray = cv2.cvtColor(img_padded, cv2.COLOR_BGR2GRAY)
             _, binary = cv2.threshold(img_gray, 240, 255, cv2.THRESH_BINARY_INV)
             contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            new_image = np.ones_like(img) * 255
-            cv2.drawContours(new_image, contours, -1, (0, 0, 0), thickness=cv2.FILLED)
+            
+            # Tạo ảnh mới với nền trắng
+            new_image = np.ones_like(img_padded) * 255
+            
+            # Xử lý từng contour
+            for contour in contours:
+                # Tính toán kích thước của đối tượng
+                x, y, w, h = cv2.boundingRect(contour)
+                
+                # Tính toán độ rộng viền dựa trên border_factor
+                border_size = int(min(w, h) * self.border_factor)
+                
+                # Đảm bảo border_size ít nhất là 1 pixel
+                border_size = max(1, border_size)
+                
+                # Tạo mask cho contour hiện tại
+                mask = np.zeros_like(img_gray)
+                cv2.drawContours(mask, [contour], -1, 255, thickness=cv2.FILLED)
+                
+                # Tạo kernel cho phép dilation
+                kernel = np.ones((border_size * 2 + 1, border_size * 2 + 1), np.uint8)
+                
+                # Áp dụng dilation để tạo viền
+                dilated_mask = cv2.dilate(mask, kernel, iterations=1)
+                
+                # Vẽ contour đã được dilation lên ảnh mới
+                new_image[dilated_mask > 0] = [0, 0, 0]  # Đặt màu đen cho vùng đã dilation
+            
+            # Cắt bỏ phần padding để trả về kích thước ban đầu
+            new_image = new_image[padding_size:padding_size+original_h, padding_size:padding_size+original_w]
+            
+            # Kiểm tra kích thước ảnh đầu ra
+            if new_image.shape[:2] != (original_h, original_w):
+                # Nếu kích thước không khớp, resize lại ảnh
+                new_image = cv2.resize(new_image, (original_w, original_h), interpolation=cv2.INTER_NEAREST)
             
             # Convert to PIL format for display
             pil_img = Image.fromarray(cv2.cvtColor(new_image, cv2.COLOR_BGR2RGB))
