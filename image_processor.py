@@ -1,4 +1,5 @@
 import os
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, Scale, Frame, Label
 from PIL import Image, ImageTk
@@ -174,9 +175,21 @@ class ImageProcessorApp:
         self.edge_slider.set(2)
         self.edge_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
 
-        # Thêm nút Preview Settings
-        preview_settings_button = tk.Button(advanced_frame, text="Preview Settings", command=self.preview_image)
-        preview_settings_button.pack(pady=(5, 0))
+        # Thêm nút Apply Settings
+        apply_settings_button = tk.Button(
+            advanced_frame, 
+            text="Apply & Preview", 
+            command=self.update_preview_if_selected
+        )
+        apply_settings_button.pack(pady=(5, 0), side=tk.LEFT, padx=(0, 5))
+
+        # Nút Preview Settings vẫn giữ nguyên
+        preview_settings_button = tk.Button(
+            advanced_frame, 
+            text="Preview Settings", 
+            command=self.preview_image
+        )
+        preview_settings_button.pack(pady=(5, 0), side=tk.RIGHT, padx=(5, 0))
         
         # Process images button
         process_button = tk.Button(left_frame, text="Process Images", command=self.process_images, width=20, height=2)
@@ -202,8 +215,8 @@ class ImageProcessorApp:
         preview_container = tk.Frame(right_frame, padx=10, pady=10)
         preview_container.pack(fill=tk.BOTH, expand=True)
         
-        # Preview image
-        self.preview_label = tk.Label(preview_container, text="Select an image to preview")
+        # Preview image - Thay đổi text ban đầu
+        self.preview_label = tk.Label(preview_container, text="Click 'Apply Settings' to preview")
         self.preview_label.pack(fill=tk.BOTH, expand=True)
         
         # File info section
@@ -226,33 +239,42 @@ class ImageProcessorApp:
         percent = int(float(value))
         self.border_value_label.config(text=f"{percent}%")
         self.border_factor = percent / 100
-        self.update_preview_if_selected()
-    
+
     def update_blur_value(self, value):
         self.blur_value_label.config(text=str(value))
         self.blur_strength = int(value)
-        self.update_preview_if_selected()
-        
+
     def update_smooth_value(self, value):
         self.smooth_value_label.config(text=str(value))
         self.smoothing_level = int(value)
-        self.update_preview_if_selected()
-        
+
     def update_edge_value(self, value):
         self.edge_value_label.config(text=str(value))
         self.edge_threshold = int(value)
-        self.update_preview_if_selected()
 
     def update_preview_if_selected(self):
         if self.file_listbox.curselection():
             index = self.file_listbox.curselection()[0]
             file_path = self.selected_files[index]
             self.update_preview(file_path)
+        else:
+            # Hiển thị thông báo khi chưa chọn ảnh
+            self.preview_label.config(text="Please select an image from the list\nand click 'Apply Settings'")
+            self.preview_label.image = None
 
     def update_preview(self, file_path):
         try:
+            # Hiển thị thông báo đang xử lý
+            self.preview_label.config(text="Processing image...\nPlease wait...")
+            self.preview_label.image = None
+            self.root.update()  # Cập nhật giao diện để hiển thị thông báo
+            
             # Process the image
             img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+            
+            if img is None:
+                messagebox.showerror("Error", f"Could not read image file: {file_path}")
+                return
             
             # Xử lý alpha channel nếu có
             if img.shape[-1] == 4:
@@ -314,7 +336,8 @@ class ImageProcessorApp:
             self.preview_label.image = preview_img  # Giữ reference
             
         except Exception as e:
-            self.preview_label.config(text=f"Could not preview image: {str(e)}")
+            messagebox.showerror("Error", f"Could not preview image: {str(e)}")
+            self.preview_label.config(text=f"Error: {str(e)}")
             self.preview_label.image = None
 
     def on_file_select(self, event):
@@ -325,8 +348,8 @@ class ImageProcessorApp:
         index = self.file_listbox.curselection()[0]
         file_path = self.selected_files[index]
         
-        # Update preview
-        self.update_preview(file_path)
+        # Chỉ cập nhật thông tin file, không tự động cập nhật preview
+        # self.update_preview(file_path)
         
         # Update file info
         self.update_file_info(file_path)
@@ -450,8 +473,12 @@ class ImageProcessorApp:
             # Process the image
             img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)  # Đọc cả kênh alpha nếu có
             
+            if img is None:
+                messagebox.showerror("Error", f"Could not read image file: {file_path}")
+                return
+            
             # Xử lý alpha channel nếu có (đổi vùng trong suốt thành trắng)
-            if img.shape[-1] == 4:  # Nếu ảnh có kênh alpha (BGRA)
+            if len(img.shape) > 2 and img.shape[-1] == 4:  # Nếu ảnh có kênh alpha (BGRA)
                 # Tách kênh alpha
                 alpha_channel = img[:, :, 3]
                 
@@ -492,6 +519,14 @@ class ImageProcessorApp:
                 padding_size
             )
             
+            # Lưu ảnh tạm thời để xem trước
+            temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp")
+            if not os.path.exists(temp_dir):
+                os.makedirs(temp_dir)
+            
+            temp_file = os.path.join(temp_dir, "preview_temp.png")
+            cv2.imwrite(temp_file, new_image)
+            
             # Convert to PIL format for display
             pil_img = Image.fromarray(cv2.cvtColor(new_image, cv2.COLOR_BGR2RGB))
             
@@ -511,15 +546,37 @@ class ImageProcessorApp:
             new_height = int(height * ratio)
             
             pil_img = pil_img.resize((new_width, new_height), Image.LANCZOS)
-            tk_img = ImageTk.PhotoImage(pil_img)
+            
+            # Đảm bảo giữ tham chiếu đến ảnh
+            self.preview_tk_img = ImageTk.PhotoImage(pil_img)
             
             # Display the processed image
-            preview_label = tk.Label(preview_window, image=tk_img)
-            preview_label.image = tk_img  # Keep a reference
+            preview_label = tk.Label(preview_window, image=self.preview_tk_img)
             preview_label.pack(padx=10, pady=10)
+            
+            # Thêm nút để mở ảnh bằng ứng dụng mặc định
+            open_button = tk.Button(
+                preview_window, 
+                text="Open in Default Viewer", 
+                command=lambda: self.open_file_with_default_app(temp_file)
+            )
+            open_button.pack(pady=10)
             
         except Exception as e:
             messagebox.showerror("Error", f"Could not preview image: {str(e)}")
+
+    def open_file_with_default_app(self, file_path):
+        """Mở file bằng ứng dụng mặc định của hệ điều hành"""
+        try:
+            if os.name == 'nt':  # Windows
+                os.startfile(file_path)
+            elif os.name == 'posix':  # macOS hoặc Linux
+                if sys.platform == 'darwin':  # macOS
+                    subprocess.call(('open', file_path))
+                else:  # Linux
+                    subprocess.call(('xdg-open', file_path))
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open file: {str(e)}")
 
     def update_file_info(self, file_path):
         try:

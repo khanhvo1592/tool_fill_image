@@ -10,3 +10,7 @@ Tools filler image png to black color
 - Kết quả được lưu dưới dạng PNG trong thư mục "output"
 
 ## Cài đặt
+## Thông số điều chỉnh
+1. Border Width:
+
+2.

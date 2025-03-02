@@ -1,8 +1,8 @@
 ✌️   
-#cài tk trên mac
+# cài tk trên mac để chạy GUI Python
 1. mở teminal lên 
 2.chạy lệnh
- brew install python-tk
+brew install python-tk
 
 
  ---
